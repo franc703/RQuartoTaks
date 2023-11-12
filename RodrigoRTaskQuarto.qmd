@@ -1,7 +1,23 @@
 ---
 title: "R Interview"
 author: "Rodrigo Franco"
-format: html
+format: 
+  html:
+    self-contained: true
+    theme: cosmo
+    toc: true
+    toc-depth: 2
+    toc-float:
+      collapsed: false
+      smooth-scroll: true
+    number-sections: true
+    code-fold: true
+    code-tools: true
+    highlight-style: monokai
+    fig-width: 6
+    fig-height: 4
+    fig-align: center
+    css: styles.css
 editor: visual
 ---
 
@@ -17,6 +33,9 @@ library(readr)
 library(dplyr)
 library(tidyr)
 library(purrr)
+library(knitr)
+library(kableExtra)
+library(DT)
 ```
 
 ```{r}
@@ -68,10 +87,16 @@ summary_stats <- wdi %>%
     SD = weighted_sd(gdp, pop, na.rm = TRUE), # Use the weighted_sd function
     Min = min(gdp, na.rm = TRUE),
     Max = max(gdp, na.rm = TRUE)
-  )
+  , .groups = "drop")
 
 # Output the summary stats
-summary_stats
+df_kable <- kable(summary_stats, format = "html", escape = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = FALSE, 
+                position = "left") %>%
+  scroll_box(width = "750px", height = "500px") 
+
+df_kable
 ```
 
 ### **2. Aggregate stats**
@@ -106,9 +131,16 @@ aggregate_stats_long <- aggregate_stats_wide %>%
   )
 
 # View the resulting long-form data frame
-aggregate_stats_long
 
 
+# Output the summary stats
+df_kable2 <- kable(aggregate_stats_long, format = "html", escape = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = FALSE, 
+                position = "left") %>%
+  scroll_box(width = "750px", height = "500px") 
+
+df_kable2
 ```
 
 ## 3. Find Outliers
@@ -277,6 +309,17 @@ fgt_indices <- fgt_results %>%
 ```
 
 ```{r}
+# Output the summary stats
+df_kable2 <- kable(fgt_indices, format = "html", escape = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = FALSE, 
+                position = "left") %>%
+  scroll_box(width = "750px", height = "500px") 
+
+df_kable2
+```
+
+```{r}
 # Plot for the Poverty Headcount Index
 ggplot(fgt_indices, aes(x = year, y = headcount, color = factor(pov_line), group = factor(pov_line))) +
   geom_line() +
@@ -380,7 +423,15 @@ calculate_lorenz_curve <- function(data, income_var = "income", weight_var = "we
 }
 # Use the function to calculate the Lorenz curve data points for each year
 lorenz_curve_data <- calculate_lorenz_curve(combined_df)
-lorenz_curve_data
+
+# Output the summary stats
+df_kable3 <- kable(lorenz_curve_data, format = "html", escape = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = FALSE, 
+                position = "left") %>%
+  scroll_box(width = "750px", height = "500px") 
+
+df_kable3
 ```
 
 ```{r}
@@ -439,7 +490,14 @@ gini_coefficients <- sapply(years, function(y) {
 
 # Combine the years and Gini coefficients into a data frame
 gini_coefficients_df <- data.frame(year = years, gini_coefficient = gini_coefficients)
-gini_coefficients_df
+# Output the summary stats
+df_kable4 <- kable(gini_coefficients_df, format = "html", escape = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = FALSE, 
+                position = "left") %>%
+  scroll_box(width = "750px", height = "500px") 
+
+df_kable4
 ```
 
 ```{r}
