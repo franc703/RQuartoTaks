@@ -1,0 +1,457 @@
+---
+title: "R Interview"
+author: "Rodrigo Franco"
+format: html
+editor: visual
+---
+
+## R Tasks - Rodrigo Franco
+
+This Quarto document contains my answers to the R coding interview tasks.
+
+## Setup
+
+```{r}
+# Load required libraries
+library(readr)
+library(dplyr)
+library(tidyr)
+library(purrr)
+```
+
+```{r}
+# Set base URL and file tag for data access
+tag <- "202311081903"
+base_url <- "https://github.com/randrescastaneda/pub_data/raw/"
+data_url <- paste0(base_url, tag, "/data/Rtest1/")
+```
+
+```{r}
+# Download and read the dataset
+wdi <- read_rds(paste0(data_url, "wdi_in1.Rds"))
+```
+
+```{r}
+weighted_sd <- function(x, w, na.rm = FALSE) {
+  if(na.rm) {
+    na_indices <- is.na(x) | is.na(w)
+    x <- x[!na_indices]
+    w <- w[!na_indices]
+  }
+
+  # Weighted mean
+  weighted_mean <- weighted.mean(x, w)
+  
+  # Weighted sum of squares
+  sum_w <- sum(w)
+  sum_xw_sq <- sum(w * (x - weighted_mean)^2)
+  
+  # Weighted variance for population
+  weighted_variance <- sum_xw_sq / sum_w
+  
+  # Weighted standard deviation is the square root of weighted variance
+  weighted_sd <- sqrt(weighted_variance)
+  
+  return(weighted_sd)
+}
+```
+
+### **1. Summary statistics of GDP per capita by region**
+
+```{r}
+# Calculate summary statistics by region and year
+summary_stats <- wdi %>%
+  group_by(region, date) %>%
+  summarize(
+    N = n(),
+    Mean = weighted.mean(gdp, pop, na.rm = TRUE),
+    SD = weighted_sd(gdp, pop, na.rm = TRUE), # Use the weighted_sd function
+    Min = min(gdp, na.rm = TRUE),
+    Max = max(gdp, na.rm = TRUE)
+  )
+
+# Output the summary stats
+summary_stats
+```
+
+### **2. Aggregate stats**
+
+```{r}
+# Aggregate Stats
+# Calculate the summary statistics in wide form
+aggregate_stats_wide <- wdi %>%
+  group_by(region, date) %>%
+  summarize(
+    N = n(), 
+    across(
+      .cols = c(lifeex, gdp, pov_intl),
+      .fns = list(
+        mean = ~ weighted.mean(.x, pop, na.rm = TRUE),
+        sd = ~ weighted_sd(.x, pop, na.rm = TRUE),
+        min = ~ min(.x, na.rm = TRUE),
+        max = ~ max(.x, na.rm = TRUE)
+      ),
+      .names = "{.col}_{.fn}"
+    ),
+  .groups = "drop" # This drops the grouping structure after summarizing
+  )
+
+# Convert the wide-form summarized data to long form
+aggregate_stats_long <- aggregate_stats_wide %>%
+  pivot_longer(
+    cols = -c(region, date, N), # Exclude the grouping and count columns
+    names_to = c("variable", "stat"), # Split the column names into two new columns
+    names_sep = "_", # Define the separator that splits the column names
+    values_to = "value" # The name of the column to place the values in
+  )
+
+# View the resulting long-form data frame
+aggregate_stats_long
+
+
+```
+
+## 3. Find Outliers
+
+```{r}
+# Create the find_outliers function
+find_outliers <- function(data, variable, weight_var) {
+  data %>%
+    group_by(region, date) %>%
+    mutate(
+      mean = weighted.mean(!!sym(variable), !!sym(weight_var), na.rm = TRUE),
+      sd = weighted_sd(!!sym(variable), !!sym(weight_var), na.rm = TRUE) # Using the custom weighted_sd function
+    ) %>%
+    ungroup() %>%
+    filter((!!sym(variable) < (mean - 2.5 * sd)) | (!!sym(variable) > (mean + 2.5 * sd)))
+}
+
+# Find outliers for 'lifeex', 'gdp', and 'gini'
+outliers_lifeex <- find_outliers(wdi, "lifeex", "pop")
+outliers_gdp <- find_outliers(wdi, "gdp", "pop")
+outliers_gini <- find_outliers(wdi, "gini", "pop")
+```
+
+```{r}
+library(ggplot2)
+
+# Adjusting the theme to match the provided graph's aesthetics
+custom_theme <- function() {
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.box.background = element_rect(color = "transparent", fill = "transparent"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background = element_rect(fill = "transparent", color = NA), # Transparent background
+    panel.background = element_rect(fill = "transparent", color = NA), # Transparent panel
+    legend.background = element_rect(fill = "transparent", color = NA) # Transparent legend
+  )
+}
+
+# Example plot for the life expectancy outliers dataset
+ggplot(outliers_lifeex, aes(x = date, y = lifeex, color = region)) +
+  geom_point(alpha = 0.5) +  # Points with some transparency
+  geom_smooth(method = "loess", se = TRUE, color = "black") +  # Smoothed line with shaded confidence interval
+  custom_theme() +
+  labs(
+    title = "Life Expectancy Outliers by Region and Date",
+    x = "Date",
+    y = "Life Expectancy"
+  ) +
+  scale_color_manual(values = c("East Asia & Pacific" = "red",
+                                "Europe & Central Asia" = "gold",
+                                "Latin America & Caribbean" = "green",
+                                "Middle East & North Africa" = "blue",
+                                "North America" = "cyan",
+                                "Sub-Saharan Africa" = "magenta",
+                                "South Asia" = "orange"))  
+
+```
+
+```{r}
+# GDP Outliers Plot
+ggplot(outliers_gdp, aes(x = date, y = gdp, color = region)) +
+  geom_point(alpha = 0.5) +  # Points with some transparency
+  geom_smooth(method = "loess", se = TRUE, color = "black") +  # Smoothed line with shaded confidence interval
+  custom_theme() +
+  labs(
+    title = "GDP Outliers by Region and Date",
+    x = "Date",
+    y = "GDP"
+  ) +
+  scale_color_manual(values = c("East Asia & Pacific" = "red",
+                                "Europe & Central Asia" = "gold",
+                                "Latin America & Caribbean" = "green",
+                                "Middle East & North Africa" = "blue",
+                                "North America" = "cyan",
+                                "Sub-Saharan Africa" = "magenta",
+                                "South Asia" = "orange")) 
+
+
+```
+
+```{r}
+# Gini Coefficient Outliers Plot
+ggplot(outliers_gini, aes(x = date, y = gini, color = region)) +
+  geom_point(alpha = 0.5) +  # Points with some transparency
+  geom_smooth(method = "loess", se = TRUE, color = "black") +  # Smoothed line with shaded confidence interval
+  custom_theme() +
+  labs(
+    title = "Gini Coefficient Outliers by Region and Date",
+    x = "Date",
+    y = "Gini Coefficient"
+  ) +
+  scale_color_manual(values = c("East Asia & Pacific" = "red",
+                                "Europe & Central Asia" = "gold",
+                                "Latin America & Caribbean" = "green",
+                                "Middle East & North Africa" = "blue",
+                                "North America" = "cyan",
+                                "Sub-Saharan Africa" = "magenta",
+                                "South Asia" = "orange"))  
+```
+
+### **4. Poverty measures**
+
+```{r}
+# Donwload the simulated data
+l_svy <-
+    readr::read_rds(paste0(data_url, "svy_sim_in1.Rds"))
+```
+
+### Cleaning the l_svy data
+
+```{r}
+# Extract the names of the list elements
+names_list <- names(l_svy)
+
+# Use map2_df from purrr to iterate over the data frames and their names
+combined_df <- map2_df(l_svy, names_list, ~ mutate(.x, year = as.integer(sub("Y", "", .y))))
+
+# 'combined_df' now has all the data combined with a 'year' variable
+```
+
+```{r}
+calculate_fgt <- function(income, pov_line, weight) {
+  # Ensure the data is filtered for the specific pov_line and year before passing to the function
+  headcount_ratio <- sum(weight[income < pov_line], na.rm = TRUE) / sum(weight, na.rm = TRUE)
+  povgap_ratio <- sum((pov_line - income)[income < pov_line] * weight[income < pov_line], na.rm = TRUE) / 
+                  (sum(weight, na.rm = TRUE) * pov_line)
+  povseverity_ratio <- sum(((pov_line - income)^2)[income < pov_line] * weight[income < pov_line], na.rm = TRUE) / 
+                       (sum(weight, na.rm = TRUE) * pov_line^2)
+  
+  return(c(headcount = headcount_ratio, povgap = povgap_ratio, povseverity = povseverity_ratio))
+}
+
+pov_lines <- c(2.15, 3.65, 6.85)
+years <- unique(combined_df$year)
+
+# Pre-calculate the FGT indices for each poverty line and year combination
+fgt_results <- expand.grid(year = years, pov_line = pov_lines) %>%
+  mutate(
+    headcount = vector("list", length = nrow(.)),
+    povgap = vector("list", length = nrow(.)),
+    povseverity = vector("list", length = nrow(.))
+  )
+
+for (i in seq_along(fgt_results$year)) {
+  # Extract the subset of data for the current year and poverty line
+  year_data <- combined_df[combined_df$year == fgt_results$year[i], ]
+  
+  # Calculate the FGT indices for the subset of data
+  fgt_values <- calculate_fgt(
+    income = year_data$income, 
+    pov_line = fgt_results$pov_line[i], 
+    weight = year_data$weight
+  )
+  
+  # Store the results
+  fgt_results$headcount[[i]] <- fgt_values["headcount"]
+  fgt_results$povgap[[i]] <- fgt_values["povgap"]
+  fgt_results$povseverity[[i]] <- fgt_values["povseverity"]
+}
+
+# Unnest the list columns to create the final data frame
+fgt_indices <- fgt_results %>%
+  unnest(cols = c(headcount, povgap, povseverity))
+```
+
+```{r}
+# Plot for the Poverty Headcount Index
+ggplot(fgt_indices, aes(x = year, y = headcount, color = factor(pov_line), group = factor(pov_line))) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(values = c("2.15" = "red", "3.65" = "green", "6.85" = "blue")) +
+  theme_minimal() +
+  labs(
+    title = "Poverty Headcount Index Over Years",
+    x = "Year",
+    y = "Headcount Index",
+    color = "Poverty Line"
+  ) +
+  guides(color = guide_legend(title = "Poverty Line ($ per day)"))
+
+```
+
+```{r}
+# Plot for the Poverty Gap Index
+ggplot(fgt_indices, aes(x = year, y = povgap, color = factor(pov_line), group = factor(pov_line))) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(values = c("2.15" = "red", "3.65" = "green", "6.85" = "blue")) +
+  theme_minimal() +
+  labs(
+    title = "Poverty Gap Index Over Years",
+    x = "Year",
+    y = "Poverty Gap Index",
+    color = "Poverty Line"
+  ) +
+  guides(color = guide_legend(title = "Poverty Line ($ per day)"))
+
+```
+
+```{r}
+# Plot for the Poverty Severity Index
+ggplot(fgt_indices, aes(x = year, y = povseverity, color = factor(pov_line), group = factor(pov_line))) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(values = c("2.15" = "red", "3.65" = "green", "6.85" = "blue")) +
+  theme_minimal() +
+  labs(
+    title = "Poverty Severity Index Over Years",
+    x = "Year",
+    y = "Poverty Severity Index",
+    color = "Poverty Line"
+  ) +
+  guides(color = guide_legend(title = "Poverty Line ($ per day)"))
+
+```
+
+## 5. Lorenz Curve
+
+```{r}
+calculate_lorenz_curve <- function(data, income_var = "income", weight_var = "weight", group_var = "year") {
+  # Initialize an empty data frame to store the Lorenz curve data
+  lorenz_data <- data.frame(year = integer(), bin = integer(), 
+                            welfare = numeric(), cum_welfare = numeric(), cum_population = numeric())
+  
+  # Get a vector of unique years or groups
+  groups <- unique(data[[group_var]])
+  
+  # Calculate the Lorenz curve for each group
+  for (g in groups) {
+    # Filter the data for the given group
+    data_group <- data[data[[group_var]] == g, ]
+    
+    # Sort the data by income
+    sorted_data <- data_group[order(data_group[[income_var]]), ]
+    
+    # Calculate the cumulative welfare (income)
+    cum_welfare <- cumsum(sorted_data[[income_var]] * sorted_data[[weight_var]])
+    cum_welfare <- cum_welfare / cum_welfare[length(cum_welfare)]  # Normalize to 1
+    
+    # Calculate the cumulative population
+    cum_population <- cumsum(sorted_data[[weight_var]])
+    cum_population <- cum_population / cum_population[length(cum_population)]  # Normalize to 1
+    
+    # Create a sequence of 100 percentile bins
+    bins <- seq(1, 100, by = 1)
+    
+    # Interpolate the cumulative welfare for each bin
+    cum_welfare_bins <- approx(cum_population, cum_welfare, xout = bins/100)$y
+    
+    # Calculate the welfare for each bin as the upper boundary of income in each percentile
+    welfare_bins <- approx(cum_population, sorted_data[[income_var]], xout = bins/100)$y
+    
+    # Prepare the data frame for the current group
+    group_lorenz_data <- data.frame(
+      year = g,
+      bin = bins,
+      welfare = welfare_bins,
+      cum_welfare = cum_welfare_bins,
+      cum_population = bins / 100
+    )
+    
+    # Bind the group data to the main data frame
+    lorenz_data <- rbind(lorenz_data, group_lorenz_data)
+  }
+  
+  return(lorenz_data)
+}
+# Use the function to calculate the Lorenz curve data points for each year
+lorenz_curve_data <- calculate_lorenz_curve(combined_df)
+lorenz_curve_data
+```
+
+```{r}
+# Create the Lorenz Curve Plot
+ggplot(lorenz_curve_data, aes(x = cum_population, y = cum_welfare, color = as.factor(year), group = year)) +
+  geom_line(size = 1) +  # Draw the Lorenz curves with a line size of 1
+  scale_color_viridis_d(begin = 0.2, end = 0.8, direction = 1, option = "C") +  # Use the viridis color scale
+  theme_minimal() +
+  labs(
+    title = "Lorenz Curve by Year",
+    x = "Cumulative Share of Population",
+    y = "Cumulative Share of Welfare",
+    color = "Year"
+  ) +
+  theme(legend.position = "bottom")  # Position the legend at the bottom
+
+```
+
+## 6. Gini Coefficient
+
+```{r}
+calculate_gini <- function(income, weight) {
+  # Ensure income and weight are sorted by income
+  sorted_indices <- order(income)
+  income <- income[sorted_indices]
+  weight <- weight[sorted_indices]
+  
+  # Cumulative weight
+  cum_weight <- cumsum(weight)
+  
+  # Total weight
+  total_weight <- sum(weight)
+  
+  # Cumulative income
+  cum_income <- cumsum(income * weight)
+  
+  # Total income
+  total_income <- sum(income * weight)
+  
+  # Lorenz curve points
+  lorenz_points <- cum_income / total_income
+  
+  # Gini calculation
+  B <- sum((lorenz_points[-length(lorenz_points)] + lorenz_points[-1]) * diff(cum_weight)) / total_weight
+  gini <- 1 - B
+  
+  return(gini)
+}
+
+# Calculate the Gini coefficient for each year
+years <- sort(unique(combined_df$year))
+gini_coefficients <- sapply(years, function(y) {
+  data_year <- combined_df[combined_df$year == y, ]
+  calculate_gini(data_year$income, data_year$weight)
+})
+
+# Combine the years and Gini coefficients into a data frame
+gini_coefficients_df <- data.frame(year = years, gini_coefficient = gini_coefficients)
+gini_coefficients_df
+```
+
+```{r}
+# Plotting the Gini coefficient over the years
+ggplot(gini_coefficients_df, aes(x = year, y = gini_coefficient)) +
+  geom_line() +  # Connect points with lines
+  geom_point() +  # Add points
+  theme_minimal() +  # Use a minimal theme
+  labs(
+    title = "Gini Coefficient Over Time",
+    x = "Year",
+    y = "Gini Coefficient"
+  )
+
+```
